@@ -11,6 +11,8 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
+import org.apache.kafka.common.KafkaException;
+
 import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -36,6 +38,7 @@ public class KafkaBatchWorker implements Runnable {
     private final AtomicLong totalInserted  = new AtomicLong(0);
     private final AtomicLong totalBatches   = new AtomicLong(0);
     private final AtomicLong totalFlushTime = new AtomicLong(0);
+    private final AtomicLong totalErrors    = new AtomicLong(0);
 
     public KafkaBatchWorker(DatabaseManager db) {
         this.db = db;
@@ -87,9 +90,10 @@ public class KafkaBatchWorker implements Runnable {
             }
         }
 
-        System.out.printf("[KafkaBatchWorker] Done. total_inserted=%d batches=%d avg_flush=%.1fms%n",
+        System.out.printf("[KafkaBatchWorker] Done. total_inserted=%d batches=%d avg_flush=%.1fms errors=%d%n",
                 totalInserted.get(), totalBatches.get(),
-                totalBatches.get() == 0 ? 0.0 : (double) totalFlushTime.get() / totalBatches.get());
+                totalBatches.get() == 0 ? 0.0 : (double) totalFlushTime.get() / totalBatches.get(),
+                totalErrors.get());
     }
 
     private void flush(KafkaConsumer<String, String> consumer, List<Record> batch) {
@@ -106,8 +110,27 @@ public class KafkaBatchWorker implements Runnable {
             System.out.printf("[KafkaBatchWorker] Flushed %d records in %dms | total=%d%n",
                     batch.size(), elapsed, totalInserted.get());
         } catch (SQLException e) {
-            System.err.println("[KafkaBatchWorker] DB error (offset NOT committed): " + e.getMessage());
-            // Offset not committed → Kafka will re-deliver this batch on restart
+            System.err.printf("[KafkaBatchWorker] Batch insert failed (%d records), falling back to single inserts: %s%n",
+                    batch.size(), e.getMessage());
+            fallbackSingleInsert(batch);
+        } catch (KafkaException e) {
+            // DB write succeeded but commit failed — record counted but offset may re-deliver
+            totalErrors.incrementAndGet();
+            System.err.printf("[KafkaBatchWorker] Kafka commit error: %s | errors=%d%n",
+                    e.getMessage(), totalErrors.get());
+        }
+    }
+
+    private void fallbackSingleInsert(List<Record> batch) {
+        for (Record r : batch) {
+            try {
+                db.insertSingle(r);
+                totalInserted.incrementAndGet();
+            } catch (SQLException ex) {
+                totalErrors.incrementAndGet();
+                System.err.printf("[KafkaBatchWorker] Failed record id=%s clientId=%s ts=%d: %s%n",
+                        r.getId(), r.getClientId(), r.getTimestamp(), ex.getMessage());
+            }
         }
     }
 
@@ -145,4 +168,5 @@ public class KafkaBatchWorker implements Runnable {
 
     public long getTotalInserted() { return totalInserted.get(); }
     public long getTotalBatches()  { return totalBatches.get(); }
+    public long getTotalErrors()   { return totalErrors.get(); }
 }
