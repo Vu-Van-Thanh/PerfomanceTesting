@@ -6,7 +6,7 @@ public class AppConfig {
     public static final int    SERVER_PORT              = intEnv("SERVER_PORT", 9090);
     public static final int    SINGLE_THREAD_SERVER_PORT = intEnv("SINGLE_THREAD_SERVER_PORT", 9091);
     // tô
-    // Kafka
+    // Kafkad
     public static final String KAFKA_BOOTSTRAP_SERVERS  = env("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092");
     public static final String KAFKA_TOPIC              = env("KAFKA_TOPIC", "records");
     public static final String KAFKA_GROUP_ID           = env("KAFKA_GROUP_ID", "batch-worker");
