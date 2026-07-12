@@ -152,6 +152,7 @@ public class ConsoleClient {
 
         if (multithread && success > 0) {
             // Multithread: "OK" = vào Kafka, chưa phải DB → poll DB đến khi đủ records
+            // new level
             System.out.printf("Kafka push   : %d ms (%.1f rec/s)%n",
                     kafkaElapsed, success * 1000.0 / kafkaElapsed);
             System.out.print("Chờ DB insert hoàn tất");
